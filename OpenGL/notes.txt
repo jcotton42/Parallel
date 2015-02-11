@@ -1,0 +1,23 @@
+http://edspi31415.blogspot.com/2012/09/cartesian-coordinates-to-pixel-screen.html
+z_n+1 = z_n^2 + c
+z = x + yi
+z^2 = x^2 + 2xyi - y^2
+c = x0 + y0i
+For each pixel (Px, Py) on the screen, do:
+{
+  x0 = scaled x coordinate of pixel (scaled to lie in the Mandelbrot X scale (-2.5, 1))
+  y0 = scaled y coordinate of pixel (scaled to lie in the Mandelbrot Y scale (-1, 1))
+  x = 0.0
+  y = 0.0
+  iteration = 0
+  max_iteration = 1000
+  while ( x*x + y*y < 2*2  AND  iteration < max_iteration )
+  {
+    xtemp = x*x - y*y + x0
+    y = 2*x*y + y0
+    x = xtemp
+    iteration = iteration + 1
+  }
+  color = palette[iteration]
+  plot(Px, Py, color)
+}
