@@ -14,8 +14,8 @@ typedef struct {
 } Sphere;
 
 typedef struct {
-    __declspec(align(32)) double origin[4];
-    __declspec(align(32)) double direction[4];
+    double* origin;
+    double* direction;
 } Ray;
 
 Sphere sphereB = {
@@ -31,21 +31,48 @@ Sphere sphereR = {
     0.333333
 };
 double light[4] = {0.500000, 0.500000, -1.000000, 0.000000};
-double eye[4] = {0.000000, 1.000000, -0.500000, 0.000000};
+__declspec(align(32)) double eye[4] = {0.500000, 0.500000, -1.000000, 0.000000};
 
 bool rayIntersectsSphere(Ray* ray, Sphere* sphere);
 void writeppm(int*** data);
+void vectorNorm(double a[4], double out[4]);
+double vectorDot(double a[4], double b[4]);
+void vectorSub(double a[4], double b[4], double out[4]);
 
 int main(void) {
-    for(int y = 0; y < H; y++) {
-        for(int x = 0; x < W; x++) {
+    int*** data = malloc(sizeof(int**) * H);
+    Ray ray = {eye, _aligned_malloc(sizeof(double) * 4, 32)};
+    for(int yp = 0; yp < H; yp++) {
+        double y = 1.0 * yp / H;
+        data[H - yp - 1] = malloc(sizeof(int*) * W);
+        for(int xp = 0; xp < W; xp++) {
+            data[H - yp - 1][xp] = calloc(3, sizeof(int));
+            double x = 1.0 * xp / W;
+            ray.direction[0] = x;
+            ray.direction[1] = y;
+            ray.direction[2] = 0;
+            ray.direction[3] = 0;
+            vectorSub(ray.direction, ray.origin, ray.direction);
+            vectorNorm(ray.direction, ray.direction);
+            if(
+                rayIntersectsSphere(&ray, &sphereB) ||
+                rayIntersectsSphere(&ray, &sphereG) ||
+                rayIntersectsSphere(&ray, &sphereR)
+                ) {
+                data[H - yp - 1][xp][0] = data[H - yp - 1][xp][1] = data[H - yp - 1][xp][2] = 255;
+            }
         }
     }
+    writeppm(data);
     return 0;
 }
 
-double vectorDot(double a[4], double b[4]);
-void vectorSub(double a[4], double b[4], double out[4]);
+void vectorNorm(double a[4], double out[4]) {
+    double length = sqrt(vectorDot(a, a));
+    out[0] = a[0] / length;
+    out[1] = a[1] / length;
+    out[2] = a[2] / length;
+}
 
 bool rayIntersectsSphere(Ray* ray, Sphere* sphere) {
     // d.dt^2 + 2d.(p0 - c)t + (p0 - c).(p0 - c) - r^2 = 0
