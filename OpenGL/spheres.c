@@ -1,7 +1,8 @@
+#pragma warning(disable:4756)
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <immintrin.h>
+#include <intrin.h>
 #include <stdbool.h>
 
 #define W 640
@@ -11,6 +12,12 @@ typedef struct {
     double* origin;
     double* direction;
 } Ray;
+
+typedef struct {
+    double* origin;
+    double* direction;
+    int* rgb;
+} Light;
 
 typedef struct {
     int* rgb;
@@ -32,79 +39,113 @@ typedef struct {
     double point[4];
 } Plane;
 
-double light[4] = {0.500000, 0.500000, -1.000000, 0.000000};
-double eye[4] = {0.500000, 0.500000, -1.000000, 0.000000};
-
-void setPixel(int x, int y, Ray* ray, int*** pixels);
 bool rayIntersectSphere(Ray* ray, Sphere* sphere, double* t);
 bool rayIntersectPlane(Ray* ray, Plane* plane, double* t);
+
+static Object* objects[] = {
+    &(Sphere) {
+        (int[]) {0, 0, 255},
+        rayIntersectSphere,
+        {0.500000, 0.500000, 0.166667, 0.000000},
+        0.166667
+    },
+    &(Sphere) {
+        (int[]) {0, 255, 0},
+        rayIntersectSphere,
+        {0.833333, 0.500000, 0.500000, 0.000000},
+        0.166667
+    },
+    &(Sphere) {
+        (int[]) {255, 0, 0},
+        rayIntersectSphere,
+        {0.333333, 0.666667, 0.666667, 0.000000},
+        0.333333
+    },
+    &(Plane) {
+        (int[]) {255, 255, 255},
+        rayIntersectPlane,
+        {0, 0.333333, 0, 0},
+        {0, 0.333333, 0, 0}
+    }
+};
+
+void setPixel(int x, int y, Ray* eye, Light* light, int*** pixels);
 void writeppm(int*** data);
 void vectorNorm(double a[4], double out[4]);
 double vectorDot(double a[4], double b[4]);
 void vectorSub(double a[4], double b[4], double out[4]);
 void vectorAdd(double a[4], double b[4], double out[4]);
+void vectorScale(double a[4], double b, double out[4]);
+double vectorCos(double a[4], double b[4]);
 double distance(double a[4], double b[4]);
 
-#define NUM_OBJECTS 4
-
-Object* objects[NUM_OBJECTS] = {
-    &(Sphere){
-        (int[]){0, 0, 255},
-        rayIntersectSphere,
-        {0.500000, 0.500000, 0.166667, 0.000000},
-        0.166667
-    },
-    &(Sphere){
-        (int[]){0, 255, 0},
-        rayIntersectSphere,
-        {0.833333, 0.500000, 0.500000, 0.000000},
-        0.166667
-    },
-    &(Sphere){
-        (int[]){255, 0, 0},
-        rayIntersectSphere,
-        {0.333333, 0.666667, 0.666667, 0.000000},
-        0.333333
-    },
-    &(Plane){
-        (int[]){255, 255, 255},
-        rayIntersectPlane,
-        {0, 1, 0, 0},
-        {1, 0.333333, 1, 0}
-        }
-};
+#define NUM_OBJECTS sizeof(objects) / sizeof(Object*)
 
 int main(void) {
     int*** data = malloc(sizeof(int**) * H);
-    Ray ray = {eye, _aligned_malloc(sizeof(double) * 4, 32)};
+    Ray eye = {
+        (double[]) {0.500000, 0.500000, -1.000000, 0.000000},
+        malloc(sizeof(double) * 4)
+    };
+    Light light = {
+        (double[]){0.000000, 1.000000, -0.500000, 0.000000},
+        (double[]){0.000000, 0.000000, 0.000000, 0.000000},
+        (int[]){255, 255, 255}
+    };
     for(int yp = 0; yp < H; yp++) {
         double y = 1.0 * yp / H;
         data[H - yp - 1] = malloc(sizeof(int*) * W);
         for(int xp = 0; xp < W; xp++) {
             data[H - yp - 1][xp] = calloc(3, sizeof(int));
             double x = 1.0 * xp / W;
-            ray.direction = (double[]) { x, y, 0, 0 };
-            vectorSub(ray.direction, ray.origin, ray.direction);
-            vectorNorm(ray.direction, ray.direction);
+            eye.direction = (double[]) { x, y, 0, 0 };
+            vectorSub(eye.direction, eye.origin, eye.direction);
+            vectorNorm(eye.direction, eye.direction);
 
-            setPixel(xp, yp, &ray, data);
+            setPixel(xp, yp, &eye, &light, data);
         }
     }
+
     writeppm(data);
+    system("imdisplay.exe out.ppm");
     return 0;
 }
 
-void setPixel(int x, int y, Ray* ray, int*** pixels) {
+void setPixel(int x, int y, Ray* eye, Light* light, int*** pixels) {
     double t = INFINITY;
     double tmp;
+    int ti = 0;
+    Ray ray = {
+        (double[]){0,0,0,0},
+        (double[]){0,0,0,0}
+    };
     int* color = NULL;
 
     for(int i = 0; i < NUM_OBJECTS; i++) {
-        if(objects[i]->rayIntersect(ray, objects[i], &tmp)) {
-            if(tmp < t) {
+        if(objects[i]->rayIntersect(eye, objects[i], &tmp)) {
+            if(tmp < t && tmp > 0) {
                 t = tmp;
-                color = objects[i]->rgb;
+                if(color == NULL) color = alloca(sizeof(int) * 3);
+                color[0] = objects[i]->rgb[0];
+                color[1] = objects[i]->rgb[1];
+                color[2] = objects[i]->rgb[2];
+                ti = i;
             }
+        }
+    }
+
+    if(light != NULL && !isinf(t)) {
+        vectorScale(eye->direction, t, ray.origin);
+        vectorAdd(ray.origin, eye->origin, ray.origin);
+        vectorSub(light->origin, ray.origin, ray.direction);
+        vectorNorm(ray.direction, ray.direction);
+        t = INFINITY;
+        for(int i = 0; i < NUM_OBJECTS; i++)
+            if(i != ti && objects[i]->rayIntersect(&ray, objects[i], &tmp))
+                if(tmp < t && tmp > 0)
+                    t = tmp;
+        if(!isinf(t)) {
+
         }
     }
 
@@ -144,8 +185,9 @@ bool rayIntersectSphere(Ray* ray, Sphere* sphere, double* t) {
         return false;
     } else {
         // (-b +- sqrt(discr))/(4ac)
-        double minus = -B - sqrt(discr) / (4 * A * C);
-        double plus = -B + sqrt(discr) / (4 * A * C);
+        double minus = (-B - sqrt(discr)) / (2 * A);
+        double plus = (-B + sqrt(discr)) / (2 * A);
+
         if(minus < 0) minus = INFINITY;
         if(plus < 0) plus = INFINITY;
         *t = fmin(minus, plus);
@@ -154,33 +196,33 @@ bool rayIntersectSphere(Ray* ray, Sphere* sphere, double* t) {
 }
 
 bool rayIntersectPlane(Ray* ray, Plane* plane, double* t) {
-    // d = ((p0 - l0).n)/(l.n)
-    // l.n == 0: line and plane are parallel
-    //      (p0 - l0).n == 0: line is inside the plane
-    //      (p0 - l0).n != 0: no intersection
-    // l.n != 0: single point of intersection
-    //      t = distance(ray->origin, dl + l0)
-    // n: normal vector
-    // p0: point on plane
-    // l: direction of ray
-    // l0: point on ray
-    double numerator;
-    double denominator;
-    double tmp[4];
-    denominator = vectorDot(ray->direction, plane->normal);
-    vectorSub(plane->point, ray->origin, tmp);
-    numerator = vectorDot(tmp, plane->normal);
-    if(denominator == 0) {
-        *t = INFINITY;
-        return numerator == 0;
+    // http://www.cs.princeton.edu/courses/archive/fall00/cs426/lectures/raycast/sld017.htm
+    // t = -(P0.N + d) / (V.N)
+    // P0: ray origin
+    // V: ray direction
+    // N: normal to plane
+    // t: distance from ray origin to plane
+    // if bottom is zero
+    //      if top is zero
+    //          intersects everywhere
+    //      else
+    //          intersects nowhere
+    // else
+    //      intersects at one point
+
+    double d = -vectorDot(plane->normal, plane->point);
+    double numerator = -(vectorDot(ray->origin, plane->normal) + d);
+    double denominator = vectorDot(ray->direction, plane->normal);
+    if(denominator == 0.0) {
+        if(numerator == 0.0) {
+            *t = 0.0;
+            return true;
+        } else {
+            *t = 0.0;
+            return false;
+        }
     } else {
-        double d = numerator / denominator;
-        tmp[0] = ray->direction[0] * d;
-        tmp[1] = ray->direction[1] * d;
-        tmp[2] = ray->direction[2] * d;
-        tmp[3] = 0;
-        vectorAdd(tmp, ray->origin, tmp);
-        *t = distance(ray->origin, tmp);
+        *t = numerator / denominator;
         return true;
     }
 }
@@ -199,6 +241,21 @@ void vectorAdd(double a[4], double b[4], double out[4]) {
     out[0] = a[0] + b[0];
     out[1] = a[1] + b[1];
     out[2] = a[2] + b[2];
+}
+
+void vectorScale(double a[4], double b, double out[4]) {
+    out[0] = a[0] * b;
+    out[1] = a[1] * b;
+    out[2] = a[2] * b;
+    out[3] = a[3] * b;
+}
+
+double vectorAngle(double a[4], double b[4]) {
+    // acos((a.b)/(|a||b|))
+    return acos(
+        vectorDot(a, b) /
+        sqrt(vectorDot(a, a) * vectorDot(b, b))
+        );
 }
 
 double distance(double a[4], double b[4]) {
