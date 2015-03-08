@@ -145,7 +145,8 @@ void setPixel(int x, int y, Ray* eye, Light* light, int*** pixels) {
                 if(tmp < t && tmp > 0)
                     t = tmp;
         if(!isinf(t)) {
-
+            vectorScale(eye->direction, t, ray.origin);
+            vectorAdd(ray.origin, eye->origin, ray.origin);
         }
     }
 
