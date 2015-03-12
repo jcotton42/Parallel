@@ -1,43 +1,104 @@
 #pragma warning(disable:4756)
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include <intrin.h>
-#include <stdbool.h>
+#include <iostream>
+#include <cstdlib>
+#include <cmath>
+#include <functional>
 
-#define W 640
-#define H 480
+const int W = 640;
+const int H = 480;
+
+class Vector {
+    double x, y, z;
+public:
+    Vector(double x, double y, double z) {
+        this->x = x;
+        this->y = y;
+        this->z = z;
+    }
+
+    Vector& operator+=(const Vector& rhs) {
+        this->x += rhs.x;
+        this->y += rhs.y;
+        this->z += rhs.z;
+        return *this;
+    }
+
+    Vector& operator-=(const Vector& rhs) {
+        this->x -= rhs.x;
+        this->y -= rhs.y;
+        this->z -= rhs.z;
+        return *this;
+    }
+
+    friend Vector operator+(Vector lhs, const Vector& rhs) {
+        return lhs += rhs;
+    }
+
+    friend Vector operator-(Vector lhs, const Vector& rhs) {
+        return lhs -= rhs;
+    }
+
+    double dot(const Vector& other) {
+        return this->x * other.x + this->y * other.y + this->z * other.z;
+    }
+
+    Vector cross(const Vector& other) {
+        return Vector(
+            this->y * other.z - this->z * other.y,
+            this->z * other.x - this->x * other.z,
+            this->x * other.y - this->y * other.x
+            );
+    }
+
+    double magnitude() {
+        return sqrt(
+            pow(this->x, 2) +
+            pow(this->y, 2) +
+            pow(this->z, 2)
+            );
+    }
+
+    double angle(Vector& other) {
+        return acos(
+            this->dot(other) /
+            (this->magnitude() * other.magnitude())
+            );
+    }
+};
+
+class Ray {
+    Vector origin;
+    Vector direction;
+public:
+    Ray(const Vector& origin, const Vector& direction) : origin(origin), direction(direction) {}
+};
 
 typedef struct {
     double* origin;
     double* direction;
-} Ray;
-
-typedef struct {
-    double* origin;
-    double* direction;
-    int* rgb;
+    int*(*color)(double[4], int*);
 } Light;
 
-typedef struct {
-    int* rgb;
-    bool(*rayIntersect)(Ray*, struct Object*, double*);
-} Object;
+class Object {
+public:
+    int*(*color)(double[4], int*);
+    bool(*rayIntersect)(Ray*, Object*, double*);
+};
 
-typedef struct {
-    int* rgb;
-    bool(*rayIntersect)(Ray*, struct Sphere*, double*);
+struct Sphere {
+    int*(*color)(double[4], int*);
+    bool(*rayIntersect)(Ray*, Sphere*, double*);
     // it's 4 for a good reason, don't ask :)
     double origin[4];
     double radius;
-} Sphere;
+};
 
-typedef struct {
-    int* rgb;
-    bool(*rayIntersect)(Ray*, struct Plane*, double*);
+struct Plane {
+    int*(*color)(double[4], int*);
+    bool(*rayIntersect)(Ray*, Plane*, double*);
     double normal[4];
     double point[4];
-} Plane;
+};
 
 bool rayIntersectSphere(Ray* ray, Sphere* sphere, double* t);
 bool rayIntersectPlane(Ray* ray, Plane* plane, double* t);
