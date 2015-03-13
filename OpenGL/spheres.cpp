@@ -50,12 +50,25 @@ public:
             );
     }
 
+    double distance(const Vector& other) {
+        return (other - *this).magnitude();
+    }
+
     double magnitude() {
         return sqrt(
             pow(this->x, 2) +
             pow(this->y, 2) +
             pow(this->z, 2)
             );
+    }
+
+    Vector scale(double d) {
+        return Vector(this->x * d, this->y * d, this->z * d);
+    }
+
+    Vector normal() {
+        double len = this->magnitude();
+        return Vector(this->x / len, this->y / len, this->z / len);
     }
 
     double angle(Vector& other) {
@@ -67,41 +80,57 @@ public:
 };
 
 class Ray {
+public:
     Vector origin;
     Vector direction;
-public:
-    Ray(const Vector& origin, const Vector& direction) : origin(origin), direction(direction) {}
+    Ray(const Vector& origin, const Vector& direction)
+        : origin(origin), direction(direction) {}
 };
 
-typedef struct {
-    double* origin;
-    double* direction;
-    int*(*color)(double[4], int*);
-} Light;
+class Light {
+public:
+    Vector origin;
+    Vector direction;
+    std::function<int*()> color;
+
+    Light(const Vector& origin, const Vector& direction, const std::function<int*()>& color)
+        : origin(origin), direction(direction), color(color) {}
+};
 
 class Object {
 public:
-    int*(*color)(double[4], int*);
-    bool(*rayIntersect)(Ray*, Object*, double*);
+    std::function<int*(const Vector&, const Object&)> color;
+    std::function<bool(const Ray&, const Object&, const Vector&)> rayIntersect;
+    
+    Object(std::function<int*(const Vector&, const Object&)> color,
+        std::function<bool(const Ray&, const Object&, const Vector&)> rayIntersect)
+        : color(color), rayIntersect(rayIntersect) {}
 };
 
-struct Sphere {
-    int*(*color)(double[4], int*);
-    bool(*rayIntersect)(Ray*, Sphere*, double*);
-    // it's 4 for a good reason, don't ask :)
-    double origin[4];
-    double radius;
+class Sphere : public Object {
+public:
+    const Vector origin;
+    const double radius;
+
+    Sphere(std::function<int*(const Vector&, const Object&)> color,
+        std::function<bool(const Ray&, const Object&, const Vector&)> rayIntersect,
+        const Vector& origin, const double& radius)
+        : Object(color, rayIntersect), origin(origin), radius(radius) {}
 };
 
-struct Plane {
-    int*(*color)(double[4], int*);
-    bool(*rayIntersect)(Ray*, Plane*, double*);
-    double normal[4];
-    double point[4];
+class Plane : public Object {
+public:
+    const Vector normal;
+    const Vector point;
+
+    Plane(std::function<int*(const Vector&, const Object&)> color,
+        std::function<bool(const Ray&, const Object&, const Vector&)> rayIntersect,
+        const Vector& normal, const Vector& point)
+        : Object(color, rayIntersect), normal(normal), point(point) {}
 };
 
-bool rayIntersectSphere(Ray* ray, Sphere* sphere, double* t);
-bool rayIntersectPlane(Ray* ray, Plane* plane, double* t);
+bool rayIntersectSphere(const Ray& ray, const Sphere& sphere, double* t);
+bool rayIntersectPlane(const Ray& ray, const Plane& plane, double* t);
 
 static Object* objects[] = {
     &(Sphere) {
@@ -132,13 +161,6 @@ static Object* objects[] = {
 
 void setPixel(int x, int y, Ray* eye, Light* light, int*** pixels);
 void writeppm(int*** data);
-void vectorNorm(double a[4], double out[4]);
-double vectorDot(double a[4], double b[4]);
-void vectorSub(double a[4], double b[4], double out[4]);
-void vectorAdd(double a[4], double b[4], double out[4]);
-void vectorScale(double a[4], double b, double out[4]);
-double vectorCos(double a[4], double b[4]);
-double distance(double a[4], double b[4]);
 
 #define NUM_OBJECTS sizeof(objects) / sizeof(Object*)
 
@@ -229,7 +251,7 @@ void vectorNorm(double a[4], double out[4]) {
     out[2] = a[2] / length;
 }
 
-bool rayIntersectSphere(Ray* ray, Sphere* sphere, double* t) {
+bool rayIntersectSphere(const Ray& ray, const Sphere& sphere, double* t) {
     // d.dt^2 + 2d.(p0 - c)t + (p0 - c).(p0 - c) - r^2 = 0
     double A, B, C;
     A = vectorDot(ray->direction, ray->direction);
@@ -257,7 +279,7 @@ bool rayIntersectSphere(Ray* ray, Sphere* sphere, double* t) {
     }
 }
 
-bool rayIntersectPlane(Ray* ray, Plane* plane, double* t) {
+bool rayIntersectPlane(const Ray& ray, const Plane& plane, double* t) {
     // http://www.cs.princeton.edu/courses/archive/fall00/cs426/lectures/raycast/sld017.htm
     // t = -(P0.N + d) / (V.N)
     // P0: ray origin
