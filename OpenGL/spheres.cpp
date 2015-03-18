@@ -3,13 +3,17 @@
 #include <cstdlib>
 #include <cmath>
 #include <functional>
+#include <vector>
+#include <array>
 
 const int W = 640;
 const int H = 480;
 
 class Vector {
-    double x, y, z;
 public:
+    double x, y, z;
+    Vector() : x(0), y(0), z(0) {}
+
     Vector(double x, double y, double z) {
         this->x = x;
         this->y = y;
@@ -38,7 +42,7 @@ public:
         return lhs -= rhs;
     }
 
-    double dot(const Vector& other) {
+    double dot(const Vector& other) const {
         return this->x * other.x + this->y * other.y + this->z * other.z;
     }
 
@@ -83,28 +87,36 @@ class Ray {
 public:
     Vector origin;
     Vector direction;
-    Ray(const Vector& origin, const Vector& direction)
+    Ray(Vector origin, Vector direction)
         : origin(origin), direction(direction) {}
 };
 
 class Light {
 public:
-    Vector origin;
-    Vector direction;
-    std::function<int*()> color;
+    const Vector origin;
+    const Vector direction;
+    std::function<std::array<int ,3>()> color;
 
     Light(const Vector& origin, const Vector& direction, const std::function<int*()>& color)
         : origin(origin), direction(direction), color(color) {}
 };
 
 class Object {
+protected:
+    std::function<std::array<int, 3>(const Vector&, const Object&)> _color;
+    std::function<bool(const Ray&, const Object&, double* const)> _rayIntersect;
 public:
-    std::function<int*(const Vector&, const Object&)> color;
-    std::function<bool(const Ray&, const Object&, const Vector&)> rayIntersect;
-    
-    Object(std::function<int*(const Vector&, const Object&)> color,
-        std::function<bool(const Ray&, const Object&, const Vector&)> rayIntersect)
-        : color(color), rayIntersect(rayIntersect) {}
+    Object(std::function<std::array<int, 3>(const Vector&, const Object&)> color,
+        std::function<bool(const Ray&, const Object&, double* const)> rayIntersect)
+        : _color(color), _rayIntersect(rayIntersect) {}
+
+    std::array<int, 3> color(const Vector& position) {
+        return this->_color(position, *this);
+    }
+
+    bool rayIntersect(const Ray& ray, double* const t) {
+        return this->_rayIntersect(ray, *this, t);
+    }
 };
 
 class Sphere : public Object {
@@ -112,8 +124,8 @@ public:
     const Vector origin;
     const double radius;
 
-    Sphere(std::function<int*(const Vector&, const Object&)> color,
-        std::function<bool(const Ray&, const Object&, const Vector&)> rayIntersect,
+    Sphere(std::function<std::array<int, 3>(const Vector&, const Object&)> color,
+        std::function<bool(const Ray&, const Object&, double* const)> rayIntersect,
         const Vector& origin, const double& radius)
         : Object(color, rayIntersect), origin(origin), radius(radius) {}
 };
@@ -123,69 +135,49 @@ public:
     const Vector normal;
     const Vector point;
 
-    Plane(std::function<int*(const Vector&, const Object&)> color,
-        std::function<bool(const Ray&, const Object&, const Vector&)> rayIntersect,
+    Plane(std::function<std::array<int, 3>(const Vector&, const Object&)> color,
+        std::function<bool(const Ray&, const Object&, double* const)> rayIntersect,
         const Vector& normal, const Vector& point)
         : Object(color, rayIntersect), normal(normal), point(point) {}
 };
 
-bool rayIntersectSphere(const Ray& ray, const Sphere& sphere, double* t);
-bool rayIntersectPlane(const Ray& ray, const Plane& plane, double* t);
+bool rayIntersectSphere(const Ray& ray, const Sphere& sphere, double* const t);
+bool rayIntersectPlane(const Ray& ray, const Plane& plane, double* const t);
 
-static Object* objects[] = {
-    &(Sphere) {
-        (int[]) {0, 0, 255},
-        rayIntersectSphere,
-        {0.500000, 0.500000, 0.166667, 0.000000},
-        0.166667
-    },
-    &(Sphere) {
-        (int[]) {0, 255, 0},
-        rayIntersectSphere,
-        {0.833333, 0.500000, 0.500000, 0.000000},
-        0.166667
-    },
-    &(Sphere) {
-        (int[]) {255, 0, 0},
-        rayIntersectSphere,
-        {0.333333, 0.666667, 0.666667, 0.000000},
-        0.333333
-    },
-    &(Plane) {
-        (int[]) {255, 255, 255},
-        rayIntersectPlane,
-        {0, 0.333333, 0, 0},
-        {0, 0.333333, 0, 0}
-    }
-};
+static std::vector<Object*> objects;
 
-void setPixel(int x, int y, Ray* eye, Light* light, int*** pixels);
+void setPixel(int x, int y, Ray& eye, Light& light, int*** pixels);
 void writeppm(int*** data);
 
-#define NUM_OBJECTS sizeof(objects) / sizeof(Object*)
+void initObjects();
 
 int main(void) {
-    int*** data = malloc(sizeof(int**) * H);
-    Ray eye = {
-        (double[]) {0.500000, 0.500000, -1.000000, 0.000000},
-        malloc(sizeof(double) * 4)
-    };
-    Light light = {
-        (double[]){0.000000, 1.000000, -0.500000, 0.000000},
-        (double[]){0.000000, 0.000000, 0.000000, 0.000000},
-        (int[]){255, 255, 255}
-    };
+    initObjects();
+    int*** data = new int**[H];
+    Ray eye(
+        Vector(0.500000, 0.500000, -1.000000),
+        Vector()
+        );
+
+    Light light(
+        Vector(0.000000, 1.000000, -0.500000),
+        Vector(0.000000, 0.000000, 0.000000),
+        []()->std::array<int, 3> { 
+            return {255, 255, 255};
+        }
+    );
     for(int yp = 0; yp < H; yp++) {
         double y = 1.0 * yp / H;
-        data[H - yp - 1] = malloc(sizeof(int*) * W);
+        data[H - yp - 1] = new int*[W];
         for(int xp = 0; xp < W; xp++) {
-            data[H - yp - 1][xp] = calloc(3, sizeof(int));
+            data[H - yp - 1][xp] = new int[3]();
             double x = 1.0 * xp / W;
-            eye.direction = (double[]) { x, y, 0, 0 };
-            vectorSub(eye.direction, eye.origin, eye.direction);
-            vectorNorm(eye.direction, eye.direction);
+            eye.direction.x = x;
+            eye.direction.y = y;
+            eye.direction -= eye.origin;
+            eye.direction = eye.direction.normal();
 
-            setPixel(xp, yp, &eye, &light, data);
+            setPixel(xp, yp, eye, light, data);
         }
     }
 
@@ -194,46 +186,68 @@ int main(void) {
     return 0;
 }
 
-void setPixel(int x, int y, Ray* eye, Light* light, int*** pixels) {
+void initObjects() {
+    objects.push_back(new Sphere(
+        []()->std::array<int, 3> { return{0, 0, 255}; },
+        rayIntersectSphere,
+        Vector(0.500000, 0.500000, 0.166667),
+        0.166667
+        ));
+    objects.push_back(new Sphere(
+        []()->std::array<int, 3> { return{0, 255, 0}; },
+        rayIntersectSphere,
+        Vector(0.833333, 0.500000, 0.500000),
+        0.166667
+        ));
+    objects.push_back(new Sphere(
+        []()->std::array<int, 3> { return{255, 0, 0}; },
+        rayIntersectSphere,
+        Vector(0.333333, 0.666667, 0.666667),
+        0.333333
+        ));
+    objects.push_back(new Plane(
+        []()->std::array<int, 3> { return{255, 255, 255}; },
+        rayIntersectPlane,
+        Vector(0, 0.333333, 0),
+        Vector(0, 0.333333, 0)
+        ));
+}
+
+void setPixel(int x, int y, Ray& eye, Light& light, int*** pixels) {
     double t = INFINITY;
     double tmp;
     int ti = 0;
-    Ray ray = {
-        (double[]){0,0,0,0},
-        (double[]){0,0,0,0}
+    Ray ray{
+        Vector(),
+        Vector()
     };
-    int* color = NULL;
+    int* color = nullptr;
 
-    for(int i = 0; i < NUM_OBJECTS; i++) {
-        if(objects[i]->rayIntersect(eye, objects[i], &tmp)) {
+    for(int i = 0; i < objects.size(); i++) {
+        if(objects[i]->rayIntersect(eye, &tmp)) {
             if(tmp < t && tmp > 0) {
                 t = tmp;
-                if(color == NULL) color = alloca(sizeof(int) * 3);
-                color[0] = objects[i]->rgb[0];
-                color[1] = objects[i]->rgb[1];
-                color[2] = objects[i]->rgb[2];
+                ray.origin = eye.direction.scale(t) + eye.origin;
+                color = objects[i]->color(ray.origin).data();
                 ti = i;
             }
         }
     }
 
-    if(light != NULL && !isinf(t)) {
-        vectorScale(eye->direction, t, ray.origin);
-        vectorAdd(ray.origin, eye->origin, ray.origin);
-        vectorSub(light->origin, ray.origin, ray.direction);
-        vectorNorm(ray.direction, ray.direction);
+    if(!isinf(t)) {
+        ray.direction = (light.origin - ray.origin).normal();
+
         t = INFINITY;
-        for(int i = 0; i < NUM_OBJECTS; i++)
-            if(i != ti && objects[i]->rayIntersect(&ray, objects[i], &tmp))
+        for(int i = 0; i < objects.size(); i++)
+            if(i != ti && objects[i]->rayIntersect(ray, &tmp))
                 if(tmp < t && tmp > 0)
                     t = tmp;
         if(!isinf(t)) {
-            vectorScale(eye->direction, t, ray.origin);
-            vectorAdd(ray.origin, eye->origin, ray.origin);
+            ray.origin = eye.direction.scale(t) + eye.origin;
         }
     }
 
-    if(color == NULL) {
+    if(!color) {
         pixels[H - y - 1][x][0] = 0;
         pixels[H - y - 1][x][1] = 0;
         pixels[H - y - 1][x][2] = 0;
@@ -244,42 +258,36 @@ void setPixel(int x, int y, Ray* eye, Light* light, int*** pixels) {
     }
 }
 
-void vectorNorm(double a[4], double out[4]) {
-    double length = sqrt(vectorDot(a, a));
-    out[0] = a[0] / length;
-    out[1] = a[1] / length;
-    out[2] = a[2] / length;
-}
-
-bool rayIntersectSphere(const Ray& ray, const Sphere& sphere, double* t) {
+bool rayIntersectSphere(const Ray& ray, const Sphere& sphere, double* const t) {
     // d.dt^2 + 2d.(p0 - c)t + (p0 - c).(p0 - c) - r^2 = 0
     double A, B, C;
-    A = vectorDot(ray->direction, ray->direction);
+    A = ray.direction.dot(ray.direction);
 
-    double diff[4]; // p0 - c
-    vectorSub(ray->origin, sphere->origin, diff);
-    B = 2 * vectorDot(ray->direction, diff);
+    Vector diff; // p0 - c
+    diff = ray.origin - sphere.origin;
 
-    C = vectorDot(diff, diff) - pow(sphere->radius, 2);
+    B = 2 * ray.direction.dot(diff);
+
+    C = diff.dot(diff) - pow(sphere.radius, 2);
 
     double discr; // discriminant (sp?)
     discr = pow(B, 2) - 4 * A * C;
     if(discr < 0) {
         *t = 0;
         return false;
-    } else {
-        // (-b +- sqrt(discr))/(4ac)
-        double minus = (-B - sqrt(discr)) / (2 * A);
-        double plus = (-B + sqrt(discr)) / (2 * A);
-
-        if(minus < 0) minus = INFINITY;
-        if(plus < 0) plus = INFINITY;
-        *t = fmin(minus, plus);
-        return true;
     }
+    // (-b +- sqrt(discr))/(4ac)
+
+    double minus = (-B - sqrt(discr)) / (2 * A);
+    double plus = (-B + sqrt(discr)) / (2 * A);
+
+    if(minus < 0) minus = INFINITY;
+    if(plus < 0) plus = INFINITY;
+    *t = fmin(minus, plus);
+    return true;
 }
 
-bool rayIntersectPlane(const Ray& ray, const Plane& plane, double* t) {
+bool rayIntersectPlane(const Ray& ray, const Plane& plane, double* const t) {
     // http://www.cs.princeton.edu/courses/archive/fall00/cs426/lectures/raycast/sld017.htm
     // t = -(P0.N + d) / (V.N)
     // P0: ray origin
@@ -293,61 +301,21 @@ bool rayIntersectPlane(const Ray& ray, const Plane& plane, double* t) {
     //          intersects nowhere
     // else
     //      intersects at one point
+    
+    double d = -plane.normal.dot(plane.point);
+    double numerator = -ray.origin.dot(plane.normal) - d;
+    double denominator = ray.direction.dot(plane.normal);
 
-    double d = -vectorDot(plane->normal, plane->point);
-    double numerator = -(vectorDot(ray->origin, plane->normal) + d);
-    double denominator = vectorDot(ray->direction, plane->normal);
     if(denominator == 0.0) {
         if(numerator == 0.0) {
             *t = 0.0;
             return true;
-        } else {
-            *t = 0.0;
-            return false;
         }
-    } else {
-        *t = numerator / denominator;
-        return true;
+        *t = 0.0;
+        return false;
     }
-}
-
-double vectorDot(double a[4], double b[4]) {
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-void vectorSub(double a[4], double b[4], double out[4]) {
-    out[0] = a[0] - b[0];
-    out[1] = a[1] - b[1];
-    out[2] = a[2] - b[2];
-}
-
-void vectorAdd(double a[4], double b[4], double out[4]) {
-    out[0] = a[0] + b[0];
-    out[1] = a[1] + b[1];
-    out[2] = a[2] + b[2];
-}
-
-void vectorScale(double a[4], double b, double out[4]) {
-    out[0] = a[0] * b;
-    out[1] = a[1] * b;
-    out[2] = a[2] * b;
-    out[3] = a[3] * b;
-}
-
-double vectorAngle(double a[4], double b[4]) {
-    // acos((a.b)/(|a||b|))
-    return acos(
-        vectorDot(a, b) /
-        sqrt(vectorDot(a, a) * vectorDot(b, b))
-        );
-}
-
-double distance(double a[4], double b[4]) {
-    return sqrt(
-        pow(b[0] - a[0], 2) +
-        pow(b[1] - a[1], 2) +
-        pow(b[2] - a[2], 2)
-        );
+    *t = numerator / denominator;
+    return true;
 }
 
 void writeppm(int*** data) {
