@@ -125,8 +125,6 @@ protected:
     objectColorFunc _color;
     explicit Object() {}
 public:
-    virtual ~Object() {}
-
     explicit Object(objectColorFunc color)
         : _color(color) {}
 
@@ -213,23 +211,36 @@ public:
         : Object(color), normal(normal), point(point) {}
 };
 
-/*
 class CompoundObject : Object {
-    std::vector<Object*> objects;
+    std::vector<Sphere> spheres;
     std::vector<Plane> sides;
 public:
-    explicit CompoundObject(const std::vector<Object*>& objects, const std::vector<Plane>& sides)
-        : objects(objects), sides(sides) {}
+    explicit CompoundObject(const std::vector<Sphere>& spheres)
+        : spheres(spheres), sides(std::vector<Plane>(6)) {
+        double xmin = INFINITY, ymin = INFINITY, zmin = INFINITY;
+        double xmax = -INFINITY, ymax = -INFINITY, zmax = -INFINITY;
+        for(auto&& s : spheres) {
+            xmin = std::min(xmin, s.origin.x - s.radius);
+            ymin = std::min(ymin, s.origin.y - s.radius);
+            zmin = std::min(zmin, s.origin.z - s.radius);
+
+            xmax = std::max(xmax, s.origin.x + s.radius);
+            ymax = std::max(ymax, s.origin.y + s.radius);
+            zmax = std::max(zmax, s.origin.z + s.radius);
+        }
+        Vector p1(xmin, ymin, zmin), p2(xmax, ymax, zmax);
+        sides.push_back(Plane(nullptr, ))
+    }
 
     virtual bool rayIntersect(const Ray& ray, double* const t) const override {
-        for(auto& side : sides)
+        for(auto&& side : sides)
             if(side.rayIntersect(ray, t))
                 goto inBox;
         return false;
     inBox:
         double tmp;
-        for(auto& obj : objects)
-            if(obj->rayIntersect(ray, &tmp))
+        for(auto&& s : spheres)
+            if(s.rayIntersect(ray, &tmp))
                 if(tmp < *t && tmp > 0)
                     *t = tmp;
         return true;
@@ -239,7 +250,6 @@ public:
         return std::array<int, 3> { { 0, 0, 255 }};
     }
 };
-*/
 
 static std::vector<Object*> objects;
 
